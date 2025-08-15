@@ -26,7 +26,19 @@ namespace GameClient.Core.Preferences
             if (Input.GetKey(KeyCode.LeftShift)) return GetTestingLoginFile();
             else
             {
-                if (File.Exists(Master.LoginDataPath)) return Serializer.SerializeFromFile<LoginDataFile>(Master.LoginDataPath);
+                LoginDataFile file;
+                if (File.Exists(Master.LoginDataPath)) 
+                {
+                    file = Serializer.SerializeFromFile<LoginDataFile>(Master.LoginDataPath);
+                    
+                    // Migrate existing users to username-based UID for consistency
+                    if (UserColonyIdentityManager.UpdateUIDIfNeeded(file))
+                    {
+                        SaveLoginData(file);
+                    }
+                    
+                    return file;
+                }
                 else return new LoginDataFile();
             }
         }
@@ -87,17 +99,29 @@ namespace GameClient.Core.Preferences
         {
             LoginDataFile file = LoadLoginData();
             file.Username = user;
+            
+            // Migrate to username-based UID to ensure colonies are tied to usernames
+            UserColonyIdentityManager.MigrateToUsernameBasedUID(user);
+            
             SaveLoginData(file);
         }
 
         public static void AssignPlayerHash()
         {
+            LoginDataFile file = LoadLoginData();
+            
+            // If we have a username, use username-based UID for consistency
+            if (!string.IsNullOrWhiteSpace(file.Username))
+            {
+                UserColonyIdentityManager.MigrateToUsernameBasedUID(file.Username);
+                return;
+            }
+            
+            // Fallback to old behavior only if no username is available
             if (UserLoginManagerH.CheckIfLoginIsValid()) return;
             else
             {
                 TimeSpan timeSpan = DateTime.UtcNow - new DateTime(1970, 1, 1);
-
-                LoginDataFile file = LoadLoginData();
                 file.UID = Hasher.GetHashFromString(timeSpan.TotalMilliseconds).Substring(0, 16);
                 SaveLoginData(file);
             }

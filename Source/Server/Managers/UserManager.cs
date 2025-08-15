@@ -113,20 +113,58 @@ namespace GameServer.Managers
 
         public static bool CheckIfUserExists(ServerClient client, LoginData data)
         {
+            // First check if user exists with the provided UID
             UserFile toFind = GetAllUserFiles().FirstOrDefault(fetch => fetch.Uid == data._uid);
             if (toFind != null) return true;
-            else return false;
+            
+            // If not found by UID, check if this might be a username-based migration case
+            // Generate the expected username-based UID
+            string expectedUID = UserIdentityMigrationManager.GenerateConsistentUID(data._username);
+            
+            if (data._uid == expectedUID)
+            {
+                // This is a username-based UID, check if we have data under an old UID
+                UserFile existingUser = UserIdentityMigrationManager.FindExistingUserFileByUsername(data._username, data._uid);
+                
+                if (existingUser != null)
+                {
+                    // Migrate the user data from old UID to new username-based UID
+                    UserIdentityMigrationManager.MigrateUserData(existingUser.Uid, data._uid, data._username);
+                    return true;
+                }
+                
+                // Check if username-based user file already exists
+                return UserIdentityMigrationManager.DoesUsernameBasedUserFileExist(data._username);
+            }
+            
+            return false;
         }
 
         public static bool CheckIfUserAuthCorrect(ServerClient client, LoginData data)
         {
+            // First check direct UID match
             UserFile toFind = GetAllUserFiles().FirstOrDefault(fetch => fetch.Uid == data._uid);
             if (toFind != null) return true;
-            else
+            
+            // For username-based UIDs, check if the UID matches the expected username-based format
+            string expectedUID = UserIdentityMigrationManager.GenerateConsistentUID(data._username);
+            if (data._uid == expectedUID)
             {
-                LoginManagerH.DenyConnectionWithReason(client, LoginResponse.InvalidLogin);
-                return false;
+                // This is a valid username-based UID, check if user exists under this format
+                if (UserIdentityMigrationManager.DoesUsernameBasedUserFileExist(data._username))
+                    return true;
+                
+                // Check if user exists under an old UID and can be migrated
+                UserFile existingUser = UserIdentityMigrationManager.FindExistingUserFileByUsername(data._username, data._uid);
+                if (existingUser != null)
+                {
+                    // Allow the login - migration will happen in CheckIfUserExists
+                    return true;
+                }
             }
+            
+            LoginManagerH.DenyConnectionWithReason(client, LoginResponse.InvalidLogin);
+            return false;
         }
 
         public static bool CheckIfUserBanned(ServerClient client)
