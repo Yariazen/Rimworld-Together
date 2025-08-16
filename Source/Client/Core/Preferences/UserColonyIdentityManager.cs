@@ -1,6 +1,8 @@
 using GameClient.Files;
+using GameClient.Misc;
 using Shared;
 using System;
+using Steamworks;
 
 namespace GameClient.Core.Preferences
 {
@@ -10,22 +12,61 @@ namespace GameClient.Core.Preferences
     public static class UserColonyIdentityManager
     {
         /// <summary>
-        /// Generates a consistent UID based on username
-        /// This ensures the same username always gets the same UID across different machines
+        /// Generates a consistent UID based on username and Steam ID
+        /// This ensures the same username + Steam ID combination always gets the same UID across different machines
         /// </summary>
         /// <param name="username">The username to generate UID for</param>
-        /// <returns>A consistent UID based on the username</returns>
+        /// <returns>A consistent UID based on the username and Steam ID</returns>
         public static string GenerateConsistentUID(string username)
         {
             if (string.IsNullOrWhiteSpace(username))
                 throw new ArgumentException("Username cannot be null or empty", nameof(username));
 
-            // Generate a consistent hash based on the username
-            // This ensures the same username always produces the same UID
-            string usernameHash = Hasher.GetHashFromString(username.ToLowerInvariant());
+            // Get Steam ID if available
+            string steamIdString = GetSteamIdString();
             
-            // Take first 16 characters to match existing UID format
-            return usernameHash.Substring(0, 16);
+            // If Steam ID is available, use username + Steam ID combination
+            if (!string.IsNullOrEmpty(steamIdString))
+            {
+                string combinedIdentifier = $"{username.ToLowerInvariant()}_{steamIdString}";
+                string combinedHash = Hasher.GetHashFromString(combinedIdentifier);
+                return combinedHash.Substring(0, 16);
+            }
+            else
+            {
+                // Fall back to the old method (time-based UID) if Steam ID is not available
+                TimeSpan timeSpan = DateTime.UtcNow - new DateTime(1970, 1, 1);
+                return Hasher.GetHashFromString(timeSpan.TotalMilliseconds.ToString()).Substring(0, 16);
+            }
+        }
+
+        /// <summary>
+        /// Gets the Steam ID as a string, or a fallback identifier if Steam is not available
+        /// </summary>
+        /// <returns>Steam ID string or fallback identifier</returns>
+        private static string GetSteamIdString()
+        {
+            try
+            {
+                // Try to get Steam ID if Steam is initialized and available
+                if (SteamAPI.IsSteamRunning())
+                {
+                    CSteamID steamId = SteamUser.GetSteamID();
+                    if (steamId.IsValid())
+                    {
+                        return steamId.m_SteamID.ToString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log but don't throw - fall back to machine identifier
+                Printer.Warning($"Failed to get Steam ID: {ex.Message}");
+            }
+
+            // Fallback to empty string if Steam ID is not available
+            // This means only username will be used for UID generation
+            return string.Empty;
         }
 
         /// <summary>

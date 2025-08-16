@@ -110,7 +110,7 @@ namespace GameClient.Core.Preferences
         {
             LoginDataFile file = LoadLoginData();
             
-            // If we have a username, use username-based UID for consistency
+            // If we have a username, use username-based UID with Steam ID for consistency
             if (!string.IsNullOrWhiteSpace(file.Username))
             {
                 UserColonyIdentityManager.MigrateToUsernameBasedUID(file.Username);
